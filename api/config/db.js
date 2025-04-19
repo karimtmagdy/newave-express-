@@ -2,13 +2,14 @@ const { connect, connection } = require("mongoose");
 
 exports.connectDB = async () => {
   try {
-    await connect(
-      String(process.env.MONGODB_URI).replace(
-        "<PASSWORD>",
-        String(process.env.DB_PASSWORD)
-      )
-    );
-
+    if (process.env.NODE_ENV === "development") {
+      await connect(
+        String(process.env.MONGO_URI).replace(
+          "<PASSWORD>",
+          String(process.env.DB_PASSWORD)
+        )
+      );
+    } else await connect(String(process.env.MONGODB_URI));
     connection.on("connected", () => {
       console.log("Connected to MongoDB");
     });

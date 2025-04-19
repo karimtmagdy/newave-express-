@@ -1,6 +1,7 @@
 const { User } = require("../schema/User");
 const jwt = require("jsonwebtoken");
-
+const slugify = require("slugify");
+const { AppError } = require("../middlewares/errorHandler");
 const signAccessToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
     expiresIn: "15m",
@@ -13,11 +14,17 @@ const signRefreshToken = (id) => {
   });
 };
 
-exports.register = async (req, res) => {
+exports.register = async (req, res,next) => {
   try {
     const { username, email, password } = req.body;
 
+    const existingUser = await User.findOne({ username, email });
+    if (existingUser) {
+      return next(new AppError("User already exists", 400));
+    }
+
     const user = await User.create({
+      slug: slugify(username),
       username,
       email,
       password,
@@ -67,6 +74,9 @@ exports.login = async (req, res) => {
     const refreshToken = signRefreshToken(user._id);
 
     user.refreshToken = refreshToken;
+    user.active = true;
+    user.isOnline = "online";
+    user.last_login = new Date();
     await user.save();
 
     res.cookie("refreshToken", refreshToken, {
