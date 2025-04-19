@@ -1,11 +1,7 @@
-const { Schema, model } = require("mongoose");
+const { Schema, model, Types } = require("mongoose");
 const { hash, compare } = require("bcryptjs");
-const { z } = require("zod");
-const userValidationSchema = z.object({
-  username: z.string().min(3, "Username must be at least 3 characters"),
-  email: z.string().email("Invalid email format"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
-});
+const slugify = require("slugify");
+
 const GENDER_TYPES = Object.freeze({
   MALE: "male",
   FEMALE: "female",
@@ -22,7 +18,6 @@ const USER_STATUS = Object.freeze({
   BANNED: "banned",
   SUSPENDED: "suspended",
 });
-
 const ONLINE_STATUS = Object.freeze({
   ONLINE: "online",
   OFFLINE: "offline",
@@ -53,6 +48,14 @@ const userSchema = new Schema(
     refreshToken: String,
     slug: { type: String, lowercase: true, trim: true },
     active: { type: Boolean, default: false },
+    phone: { type: Number, default: undefined, sparse: true },
+    remember_me: { type: Boolean, default: false, sparse: true },
+    verified: { type: Boolean, default: false },
+    photo: {
+      type: String,
+      default: undefined,
+      sparse: true,
+    },
     role: {
       type: String,
       enum: Object.values(USER_ROLES),
@@ -82,6 +85,8 @@ const userSchema = new Schema(
       select: false,
       sparse: true,
     },
+    cart: [{ type: Types.ObjectId, ref: "cart", sparse: true }],
+    orders: [{ type: Types.ObjectId, ref: "order", sparse: true }],
   },
   { timestamps: { createdAt: "joinedAt" }, collection: "users" }
 );
@@ -95,7 +100,9 @@ userSchema.pre("save", async function (next) {
 userSchema.methods.comparePassword = async function (candidatePassword) {
   return await compare(candidatePassword, this.password);
 };
-userSchema.statics.validateUser = (userData) => {
-  return userValidationSchema.parse(userData);
-};
-exports.User = model("User", userSchema);
+userSchema.pre("save", function (next) {
+  this.slug = slugify(this.username, { lower: true });
+  next();
+});
+const User = model("User", userSchema);
+module.exports = { User };

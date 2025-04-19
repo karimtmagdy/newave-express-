@@ -1,176 +1,118 @@
 const { User } = require("../schema/User");
-const jwt = require("jsonwebtoken");
-const slugify = require("slugify");
 const { AppError } = require("../middlewares/errorHandler");
-const signAccessToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
-    expiresIn: "15m",
+const { fn } = require("../utils/utils");
+const {
+  signAccessToken,
+  signRefreshToken,
+  verifyRefreshToken,
+  blacklistToken,
+} = require("../utils/jwt.utils");
+
+exports.register = fn(async (req, res, next) => {
+  const { username, email, password } = req.body;
+  const existingUser = await User.findOne({ username, email });
+  if (existingUser) {
+    return next(new AppError("User already exists", 400));
+  }
+  const user = await User.create({
+    username,
+    email,
+    password,
   });
-};
-
-const signRefreshToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_REFRESH_SECRET, {
-    expiresIn: "7d",
+  await user.save();
+  res.status(201).json({
+    status: "success",
+    message: "User created successfully",
+    user: {
+      id: user._id,
+      username: user.username,
+      email: user.email,
+    },
   });
-};
+});
 
-exports.register = async (req, res,next) => {
-  try {
-    const { username, email, password } = req.body;
-
-    const existingUser = await User.findOne({ username, email });
-    if (existingUser) {
-      return next(new AppError("User already exists", 400));
-    }
-
-    const user = await User.create({
-      slug: slugify(username),
-      username,
-      email,
-      password,
-    });
-
-    const token = signAccessToken(user._id);
-    const refreshToken = signRefreshToken(user._id);
-
-    user.refreshToken = refreshToken;
-    await user.save();
-
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
-
-    res.status(201).json({
-      status: "success",
-      token,
-      user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-      },
-    });
-  } catch (err) {
-    res.status(400).json({
-      status: "fail",
-      message: err.message,
-    });
+exports.login = fn(async (req, res) => {
+  const { email, password } = req.body;
+  const user = await User.findOne({ email }).select("+password");
+  if (!user || !(await user.comparePassword(password))) {
+    throw new AppError("Invalid email or password", 401);
   }
-};
+  const token = signAccessToken(user);
+  const refreshToken = signRefreshToken(user);
+  user.refreshToken = refreshToken;
+  user.active = true;
+  user.isOnline = "online";
+  user.last_login = new Date();
+  await user.save();
 
-exports.login = async (req, res) => {
-  try {
-    const { email, password } = req.body;
+  res.cookie("refreshToken", refreshToken, {
+    httpOnly: true,
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  });
+  res.status(200).json({
+    status: "success",
+    message: "Logged in successfully",
+    token,
+    user: {
+      id: user._id,
+      username: user.username,
+      email: user.email,
+    },
+  });
+});
 
-    const user = await User.findOne({ email }).select("+password");
-    if (!user || !(await user.comparePassword(password))) {
-      return res.status(401).json({
-        status: "fail",
-        message: "Invalid email or password",
-      });
-    }
+exports.logout = fn(async (req, res) => {
+  const auth = req.headers.authorization;
+  const token = auth && auth.split(" ")[1];
 
-    const token = signAccessToken(user._id);
-    const refreshToken = signRefreshToken(user._id);
-
-    user.refreshToken = refreshToken;
-    user.active = true;
-    user.isOnline = "online";
-    user.last_login = new Date();
-    await user.save();
-
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-    });
-
-    res.status(200).json({
-      status: "success",
-      token,
-      user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-      },
-    });
-  } catch (err) {
-    res.status(400).json({
-      status: "fail",
-      message: err.message,
-    });
+  if (token) {
+    blacklistToken(token);
   }
-};
 
-exports.logout = async (req, res) => {
-  try {
-    res.cookie("refreshToken", "", {
-      httpOnly: true,
-      expires: new Date(0),
-    });
+  res.cookie("refreshToken", "", {
+    httpOnly: true,
+    expires: new Date(0),
+  });
 
-    res.status(200).json({
-      status: "success",
-      message: "Logged out successfully",
-    });
-  } catch (err) {
-    res.status(400).json({
-      status: "fail",
-      message: err.message,
-    });
+  res.status(200).json({
+    status: "success",
+    message: "Logged out successfully",
+  });
+});
+
+exports.refreshToken = fn(async (req, res) => {
+  const refreshToken = req.cookies.refreshToken;
+
+  if (!refreshToken) {
+    throw new AppError("No refresh token", 401);
   }
-};
 
-exports.refreshToken = async (req, res) => {
-  try {
-    const refreshToken = req.cookies.refreshToken;
+  const decoded = verifyRefreshToken(refreshToken);
+  const user = await User.findById(decoded.id);
 
-    if (!refreshToken) {
-      return res.status(401).json({
-        status: "fail",
-        message: "No refresh token",
-      });
-    }
-
-    const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
-    const user = await User.findById(decoded.id);
-
-    if (!user || user.refreshToken !== refreshToken) {
-      return res.status(401).json({
-        status: "fail",
-        message: "Invalid refresh token",
-      });
-    }
-
-    const accessToken = signAccessToken(user._id);
-
-    res.status(200).json({
-      status: "success",
-      accessToken,
-    });
-  } catch (err) {
-    res.status(401).json({
-      status: "fail",
-      message: "Invalid refresh token",
-    });
+  if (!user || user.refreshToken !== refreshToken) {
+    throw new AppError("Invalid refresh token", 401);
   }
-};
 
-exports.getMe = async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id);
+  const accessToken = signAccessToken(user);
 
-    res.status(200).json({
-      status: "success",
-      user: {
-        id: user._id,
-        username: user.username,
-        email: user.email,
-      },
-    });
-  } catch (err) {
-    res.status(400).json({
-      status: "fail",
-      message: err.message,
-    });
+  res.status(200).json({
+    status: "success",
+    accessToken,
+  });
+});
+
+exports.getMe = fn(async (req, res, next) => {
+  const user = await User.findById(req.user.id).select("username email");
+  if (!user) {
+    throw new AppError("User not found", 404);
   }
-};
+  res.status(200).json({
+    status: "success",
+    user: {
+      id: user._id,
+      username: user.username,
+      email: user.email,
+    },
+  });
+});
