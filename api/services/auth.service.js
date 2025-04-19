@@ -23,7 +23,7 @@ exports.register = async (req, res) => {
       password,
     });
 
-    const accessToken = signAccessToken(user._id);
+    const token = signAccessToken(user._id);
     const refreshToken = signRefreshToken(user._id);
 
     user.refreshToken = refreshToken;
@@ -36,7 +36,7 @@ exports.register = async (req, res) => {
 
     res.status(201).json({
       status: "success",
-      accessToken,
+      token,
       user: {
         id: user._id,
         username: user.username,
@@ -63,7 +63,7 @@ exports.login = async (req, res) => {
       });
     }
 
-    const accessToken = signAccessToken(user._id);
+    const token = signAccessToken(user._id);
     const refreshToken = signRefreshToken(user._id);
 
     user.refreshToken = refreshToken;
@@ -76,7 +76,7 @@ exports.login = async (req, res) => {
 
     res.status(200).json({
       status: "success",
-      accessToken,
+      token,
       user: {
         id: user._id,
         username: user.username,
