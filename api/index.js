@@ -10,9 +10,9 @@ const { corsOptions } = require("./config/cors-options");
 const app = express();
 
 // Middleware
-app.use(cors(corsOptions));
 app.use(express.json());
 app.use(cookieParser());
+app.use(cors(corsOptions));
 app.use(express.urlencoded({ extended: true }));
 if (process.env.NODE_ENV === "development") app.use(morgan("dev"));
 

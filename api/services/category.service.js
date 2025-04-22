@@ -5,15 +5,19 @@ const { fn, paginate } = require("../utils/utils");
 exports.createCategory = fn(async (req, res) => {
   const category = await Category.create(req.body);
   res.status(201).json({
+    message: "category created successfully",
     status: "success",
-    data: category,
+    category,
   });
 });
 
 exports.getAllCategories = fn(async (req, res) => {
+  // const categories = await Category.find({});
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
-  const result = await paginate(Category, req.query, page, limit, { isActive: true });
+  const result = await paginate(Category, req.query, page, limit, {
+    isActive: true,
+  });
   result.categories = result.data;
   delete result.data;
   res.status(200).json(result);
