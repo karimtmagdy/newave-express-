@@ -1,4 +1,6 @@
-
 {
-  "rewrites": [{ "source": "/(.*)", "destination": "/" }]
+  "version": 2,
+  "name": "newave-express",
+  "builds": [{ "src": "api/index.js", "use": "@vercel/node" }],
+  "rewrites": [{ "source": "/api/:path*", "destination": "api/index.js" }]
 }
